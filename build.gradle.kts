@@ -13,4 +13,11 @@ repositories {
 dependencies {
     implementation(libs.kotlinx.serialization)
     implementation(libs.kotlin.reflect)
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
