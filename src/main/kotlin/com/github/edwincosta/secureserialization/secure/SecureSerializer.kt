@@ -22,6 +22,73 @@ import kotlin.reflect.full.hasAnnotation
 import kotlin.reflect.full.primaryConstructor
 import kotlin.reflect.jvm.isAccessible
 
+/**
+ * A custom Kotlinx Serialization serializer that provides automatic encryption and decryption
+ * of properties marked with [SecureProperty].
+ *
+ * This serializer implements end-to-end encryption for sensitive data during serialization,
+ * automatically encrypting marked properties before they are written and decrypting them when
+ * read back. It integrates with Kotlinx Serialization framework and supports nullable properties,
+ * custom serial names, and transient fields.
+ *
+ * ## Key Features
+ * - Automatic encryption/decryption of [SecureProperty] annotated fields
+ * - Support for nullable and optional properties
+ * - Integration with custom [SecureKeyProvider] for key management
+ * - Pluggable [SecureCryptoEngine] for different encryption algorithms
+ * - Respects [SecureDecryptOnly] annotation to skip encryption
+ * - Automatic IV generation and storage
+ * - Handles [SerialName] annotations for custom field naming
+ *
+ * ## Usage Example
+ * ```kotlin
+ * @Serializable(with = UserSerializer::class)
+ * data class User(
+ *     val id: Int,
+ *     @SecureProperty
+ *     val email: String,
+ *     @SecureProperty
+ *     val ssn: String?,
+ *     override val e2eIv: String? = null
+ * ) : Secure
+ *
+ * object UserSerializer : SecureSerializer<User>(
+ *     dataClass = User::class,
+ *     keyProvider = MyKeyProvider(),
+ *     cryptoEngine = AesGcmEngine()
+ * )
+ *
+ * // Usage
+ * val json = Json { /* config */ }
+ * val user = User(1, "user@example.com", "123-45-6789")
+ * val encrypted = json.encodeToString(UserSerializer, user)
+ * val decrypted = json.decodeFromString(UserSerializer, encrypted)
+ * ```
+ *
+ * ## Serialization Format
+ * Properties marked with [SecureProperty] are serialized with an "e2e_" prefix:
+ * ```json
+ * {
+ *   "id": 1,
+ *   "e2e_email": "encrypted_data",
+ *   "e2e_ssn": "encrypted_data",
+ *   "e2e_iv": "initialization_vector"
+ * }
+ * ```
+ *
+ * @param T The type of the data class to serialize. Must implement [Secure].
+ * @param dataClass The KClass of the data class being serialized.
+ * @param keyProvider Provider for encryption/decryption keys.
+ * @param cryptoEngine Engine that performs the actual encryption/decryption operations.
+ * @param secureAttr The name of the property that stores the IV. Defaults to "e2e_iv".
+ * @param secureAttrPrefix The prefix added to encrypted property names. Defaults to "e2e_".
+ *
+ * @see Secure
+ * @see SecureProperty
+ * @see SecureKeyProvider
+ * @see SecureCryptoEngine
+ * @see SecureDecryptOnly
+ */
 open class SecureSerializer<T : Secure>(
     private val dataClass: KClass<T>,
     private val keyProvider: SecureKeyProvider,
@@ -30,10 +97,17 @@ open class SecureSerializer<T : Secure>(
     open val secureAttrPrefix: String = "e2e_",
 ) : KSerializer<T> {
 
+    /**
+     * The serial descriptor that describes the structure of the serialized data.
+     *
+     * This descriptor is built dynamically based on the data class structure, including
+     * both regular properties and encrypted versions of [SecureProperty] annotated fields.
+     * Properties marked with [Transient] are excluded from the descriptor.
+     */
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor(dataClass.simpleName!!) {
         dataClass.primaryConstructor!!.parameters.forEach { param ->
             val prop = dataClass.declaredMemberProperties.first { it.name == param.name }
-            // Does not includes into descriptor, properties with @DisplayNameFormat annotation
+            // Skips properties annotated with @Transient
             if (!prop.hasAnnotation<Transient>()) {
                 val serialName = prop.findAnnotation<SerialName>()?.value ?: prop.name
                 element(serialName, prop.returnType.descriptor())
@@ -49,6 +123,25 @@ open class SecureSerializer<T : Secure>(
         }
     }
 
+    /**
+     * Serializes the given value, encrypting properties marked with [SecureProperty].
+     *
+     * This method performs the following steps:
+     * 1. Checks if the class is annotated with [SecureDecryptOnly]
+     * 2. Retrieves the encryption key from [keyProvider]
+     * 3. Generates a new IV using [cryptoEngine] if encryption is enabled
+     * 4. Iterates through all properties:
+     *    - Encrypts [SecureProperty] annotated fields (if key and IV are available)
+     *    - Serializes regular fields as-is
+     *    - Stores the generated IV in the [secureAttr] field
+     * 5. Skips properties marked with [Transient]
+     *
+     * If no encryption key is available or the class is marked [SecureDecryptOnly],
+     * secure properties are serialized without encryption.
+     *
+     * @param encoder The encoder to write the serialized data to.
+     * @param value The object to serialize.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     override fun serialize(encoder: Encoder, value: T) {
         val compositeEncoder = encoder.beginStructure(descriptor)
@@ -98,6 +191,25 @@ open class SecureSerializer<T : Secure>(
         compositeEncoder.endStructure(descriptor)
     }
 
+    /**
+     * Deserializes the given input, decrypting properties marked with [SecureProperty].
+     *
+     * This method performs the following steps:
+     * 1. Decodes all properties from the input into a map
+     * 2. Retrieves the encryption key from [keyProvider]
+     * 3. Extracts the IV from the [secureAttr] field
+     * 4. For each constructor parameter:
+     *    - Decrypts [SecureProperty] annotated fields using the key and IV
+     *    - Converts decrypted strings back to their original types
+     *    - Uses regular values for non-encrypted fields
+     * 5. Calls the primary constructor with the prepared parameter values
+     *
+     * If no encryption key or IV is available, secure properties are read without decryption.
+     * The method handles type conversion for primitive types automatically.
+     *
+     * @param decoder The decoder to read the serialized data from.
+     * @return The deserialized and decrypted object.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     override fun deserialize(decoder: Decoder): T {
         val dec = decoder.beginStructure(descriptor)
@@ -166,13 +278,28 @@ open class SecureSerializer<T : Secure>(
         return constructor.callBy(parameterValues)
     }
 
-    // Extension function to get the KSerializer for a given KType
+    /**
+     * Extension function to get the serial descriptor for a given KType.
+     *
+     * @return The [SerialDescriptor] for this type.
+     */
     private fun KType.descriptor(): SerialDescriptor {
         val kSerializer = serializersModule.serializer(this)
         return kSerializer.descriptor
     }
 
-    protected fun KType.deserialize(value: String?): Any? {
+    /**
+     * Extension function to deserialize a string value to the appropriate primitive type.
+     *
+     * This function converts decrypted string values back to their original types based
+     * on the type descriptor. Supports all Kotlin primitive types (Boolean, Byte, Char,
+     * Short, Int, Long, Double, Float, and String).
+     *
+     * @param value The string value to deserialize, or null.
+     * @return The deserialized value in its original type, or null if the value is null
+     *         or cannot be converted.
+     */
+    protected open fun KType.deserialize(value: String?): Any? {
         val descriptor = descriptor()
 
         return when (descriptor.kind) {
