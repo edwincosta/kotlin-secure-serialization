@@ -1,0 +1,14 @@
+[versions]
+# https://mvnrepository.com/artifact/org.jetbrains.kotlin/kotlin-gradle-plugin
+kotlin = "2.2.20"
+
+# https://github.com/Kotlin/kotlinx.serialization#setup
+kotlinSerialization = "1.9.0"
+
+[libraries]
+kotlinx-serialization = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinSerialization" }
+
+kotlin-reflect = { group = "org.jetbrains.kotlin", name = "kotlin-reflect", version.ref = "kotlin" }
+
+[plugins]
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

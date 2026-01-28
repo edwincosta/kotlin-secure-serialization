@@ -1,5 +1,6 @@
 plugins {
-    kotlin("jvm") version "2.0.0"
+    kotlin("jvm") version libs.versions.kotlin
+    alias(libs.plugins.kotlin.serialization)
 }
 
 group = "com.github.edwincosta"
@@ -10,5 +11,6 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation(libs.kotlinx.serialization)
+    implementation(libs.kotlin.reflect)
 }
