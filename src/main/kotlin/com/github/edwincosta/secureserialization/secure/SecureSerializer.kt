@@ -265,7 +265,7 @@ open class SecureSerializer<T : Secure>(
                 val securePropName = "$secureAttrPrefix$paramSerialName"
                 val encryptedValue = values[securePropName] as String?
                 val decryptedValue = encryptedValue?.let { cryptoEngine.decrypt(it, key, ivValue) }
-                param.type.deserialize(decryptedValue)
+                param.type.deserialize(decryptedValue, descriptor = param.type.descriptor())
             } else {
                 values[paramSerialName]
             }
@@ -283,7 +283,7 @@ open class SecureSerializer<T : Secure>(
      *
      * @return The [SerialDescriptor] for this type.
      */
-    private fun KType.descriptor(): SerialDescriptor {
+    protected fun KType.descriptor(): SerialDescriptor {
         val kSerializer = serializersModule.serializer(this)
         return kSerializer.descriptor
     }
@@ -296,12 +296,11 @@ open class SecureSerializer<T : Secure>(
      * Short, Int, Long, Double, Float, and String).
      *
      * @param value The string value to deserialize, or null.
+     * @param descriptor The [SerialDescriptor] that describes the target type for deserialization.
      * @return The deserialized value in its original type, or null if the value is null
      *         or cannot be converted.
      */
-    protected open fun KType.deserialize(value: String?): Any? {
-        val descriptor = descriptor()
-
+    protected open fun KType.deserialize(value: String?, descriptor: SerialDescriptor): Any? {
         return when (descriptor.kind) {
             PrimitiveKind.BOOLEAN -> value?.toBoolean()
             PrimitiveKind.BYTE -> value?.toByteOrNull()
