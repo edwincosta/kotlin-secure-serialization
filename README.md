@@ -6,6 +6,14 @@ This project demonstrates, with unit tests, how to keep **domain models clean an
 
 ---
 
+## 📦 Installation
+
+This library is available through [JitPack](https://jitpack.io/#edwincosta/kotlin-secure-serialization).
+
+[![](https://jitpack.io/v/edwincosta/kotlin-secure-serialization.svg)](https://jitpack.io/#edwincosta/kotlin-secure-serialization)
+
+---
+
 ## 🧠 The Problem
 
 Some APIs return sensitive fields in two possible ways:
