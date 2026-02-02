@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.github.edwincosta"
-version = "1.1.0-RC1"
+version = "1.1.0-RC2"
 
 repositories {
     mavenCentral()
