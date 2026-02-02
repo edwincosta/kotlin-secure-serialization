@@ -279,6 +279,41 @@ open class SecureSerializer<T : Secure>(
     }
 
     /**
+     * Hook for custom deserialization of non-primitive kinds.
+     *
+     * Use this to convert decrypted string values into complex types that are not
+     * handled by the primitive branch in `deserialize()`. The default implementation
+     * returns `null`.
+     *
+     * Example:
+     * ```kotlin
+     * override fun deserializeNonPrimitiveKind(
+     *     kindType: KType,
+     *     value: String?,
+     *     descriptor: SerialDescriptor
+     * ): Any? {
+     *     if (kindType.classifier == CustomType::class && value != null) {
+     *         return CustomType(value)
+     *     }
+     *
+     *     return null
+     * }
+     * ```
+     *
+     * @param kindType The target type to deserialize into.
+     * @param value The decrypted string value, or null.
+     * @param descriptor The serial descriptor for the target type.
+     * @return A deserialized value, or null if not handled.
+     */
+    protected open fun deserializeNonPrimitiveKind(
+        kindType: KType,
+        value: String?,
+        descriptor: SerialDescriptor
+    ): Any? {
+        return null
+    }
+
+    /**
      * Extension function to get the serial descriptor for a given KType.
      *
      * @return The [SerialDescriptor] for this type.
@@ -301,6 +336,12 @@ open class SecureSerializer<T : Secure>(
      *         or cannot be converted.
      */
     protected open fun KType.deserialize(value: String?, descriptor: SerialDescriptor): Any? {
+        val deserialized = deserializeNonPrimitiveKind(kindType = this, value, descriptor)
+
+        if (deserialized != null) {
+            return deserialized
+        }
+        
         return when (descriptor.kind) {
             PrimitiveKind.BOOLEAN -> value?.toBoolean()
             PrimitiveKind.BYTE -> value?.toByteOrNull()
