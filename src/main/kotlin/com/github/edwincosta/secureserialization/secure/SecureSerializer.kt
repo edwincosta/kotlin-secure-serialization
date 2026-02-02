@@ -336,6 +336,12 @@ open class SecureSerializer<T : Secure>(
      *         or cannot be converted.
      */
     protected open fun KType.deserialize(value: String?, descriptor: SerialDescriptor): Any? {
+        val deserialized = deserializeNonPrimitiveKind(kindType = this, value, descriptor)
+
+        if (deserialized != null) {
+            return deserialized
+        }
+        
         return when (descriptor.kind) {
             PrimitiveKind.BOOLEAN -> value?.toBoolean()
             PrimitiveKind.BYTE -> value?.toByteOrNull()
@@ -347,7 +353,7 @@ open class SecureSerializer<T : Secure>(
             PrimitiveKind.FLOAT -> value?.toFloatOrNull()
             PrimitiveKind.STRING -> value
             else -> {
-                deserializeNonPrimitiveKind(this, value, descriptor)
+                null
             }
         }
     }
